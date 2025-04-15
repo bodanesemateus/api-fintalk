@@ -1,2 +1,10 @@
+# Node.js
 node_modules/
 dist/
+lambda_function.zip
+
+# Terraform
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform/
+

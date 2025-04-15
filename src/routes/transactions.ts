@@ -3,19 +3,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { dynamoDB, TABLE_NAME } from '../config/dynamodb';
 
-// Definindo um tipo Either manualmente
 type Either<L, R> = { _tag: 'Left'; left: L } | { _tag: 'Right'; right: R };
 
 const router = Router();
 
-// Função para validar transação (paradigma funcional)
 const validateTransaction = (amount: number, description: string): Either<string, null> => {
   if (amount === 0) return { _tag: 'Left', left: 'Amount cannot be zero' };
   if (!description) return { _tag: 'Left', left: 'Description is required' };
   return { _tag: 'Right', right: null };
 };
 
-// Endpoint 1: Registrar uma transação
 router.post('/transactions', async (req: Request, res: Response) => {
   const { userId, amount, description } = req.body;
   console.log('userId', userId);
@@ -49,7 +46,6 @@ router.post('/transactions', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint 2: Listar transações de um usuário
 router.get('/transactions/:userId', async (req: Request, res: Response) => {
   const { userId } = req.params;
   const { limit = 10, lastEvaluatedKey } = req.query;
@@ -78,10 +74,9 @@ router.get('/transactions/:userId', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint 3: Consultar saldo no mês de referência
 router.get('/balance/:userId', async (req: Request, res: Response) => {
   const { userId } = req.params;
-  const { month } = req.query; // Formato: YYYY-MM
+  const { month } = req.query;
 
   if (!month || !/^\d{4}-\d{2}$/.test(month as string)) {
     return res.status(400).json({ error: 'Invalid month format (use YYYY-MM)' });
