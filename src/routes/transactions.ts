@@ -3,24 +3,19 @@ import { v4 as uuidv4 } from 'uuid';
 import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { dynamoDB, TABLE_NAME } from '../config/dynamodb';
 
-type Either<L, R> = { _tag: 'Left'; left: L } | { _tag: 'Right'; right: R };
-
 const router = Router();
 
-const validateTransaction = (amount: number, description: string): Either<string, null> => {
-  if (amount === 0) return { _tag: 'Left', left: 'Amount cannot be zero' };
-  if (!description) return { _tag: 'Left', left: 'Description is required' };
-  return { _tag: 'Right', right: null };
+const validateTransaction = (amount: number, description: string): string | null => {
+  if (amount === 0) return 'Amount cannot be zero';
+  if (!description) return 'Description is required';
+  return null;
 };
 
 router.post('/transactions', async (req: Request, res: Response) => {
   const { userId, amount, description } = req.body;
-  console.log('userId', userId);
-  console.log('amount', amount);
-  console.log('description', description);
-  const validation = validateTransaction(amount, description);
-  if (validation._tag === 'Left') {
-    return res.status(400).json({ error: validation.left });
+  const error = validateTransaction(amount, description);
+  if (error) {
+    return res.status(400).json({ error });
   }
   
   const transaction = {
