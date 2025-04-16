@@ -24,12 +24,15 @@ resource "aws_dynamodb_table" "transactions_table" {
     write_capacity     = 5
   }
 
+  stream_enabled   = true
+  stream_view_type = "NEW_IMAGE"
+
   tags = {
     Name = "TransactionsTable"
   }
 }
 
-# Função Lambda
+# Função Lambda - IAM Role
 resource "aws_iam_role" "lambda_role" {
   name = "lambda_execution_role"
 
@@ -47,6 +50,7 @@ resource "aws_iam_role" "lambda_role" {
   })
 }
 
+# Política IAM para a Lambda (DynamoDB e Logs)
 resource "aws_iam_role_policy" "lambda_policy" {
   name = "lambda_policy"
   role = aws_iam_role.lambda_role.id
@@ -60,13 +64,18 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "dynamodb:PutItem",
           "dynamodb:Query",
           "dynamodb:GetItem",
-          "dynamodb:Scan",  
+          "dynamodb:Scan",
           "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem"
+          "dynamodb:DeleteItem",
+          "dynamodb:DescribeStream",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:ListStreams"
         ]
         Resource = [
           aws_dynamodb_table.transactions_table.arn,
-          "${aws_dynamodb_table.transactions_table.arn}/index/*"  
+          "${aws_dynamodb_table.transactions_table.arn}/index/*",
+          "${aws_dynamodb_table.transactions_table.arn}/stream/*"
         ]
       },
       {
@@ -82,18 +91,19 @@ resource "aws_iam_role_policy" "lambda_policy" {
   })
 }
 
+# Função Lambda - Transactions API
 resource "aws_lambda_function" "transactions_api" {
   filename         = "../lambda_function.zip"
   function_name    = var.lambda_function_name
   role             = aws_iam_role.lambda_role.arn
-  handler          = "lambda.handler"  
+  handler          = "lambda.handler"
   runtime          = "nodejs18.x"
   source_code_hash = filebase64sha256("../lambda_function.zip")
 
   environment {
     variables = {
-      TABLE_NAME         = var.table_name
-      DYNAMODB_ENDPOINT  = "" 
+      TABLE_NAME        = var.table_name
+      DYNAMODB_ENDPOINT = ""
     }
   }
 
@@ -216,4 +226,200 @@ resource "aws_api_gateway_stage" "prod" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   deployment_id = aws_api_gateway_deployment.api_deployment.id
   stage_name    = "prod"
+}
+
+# VPC para o RDS e Lambda
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "main-vpc"
+  }
+}
+
+resource "aws_subnet" "subnet_a" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "sa-east-1a"
+
+  tags = {
+    Name = "subnet-a"
+  }
+}
+
+resource "aws_subnet" "subnet_b" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "sa-east-1b"
+
+  tags = {
+    Name = "subnet-b"
+  }
+}
+
+# Internet Gateway para a VPC
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "main-igw"
+  }
+}
+
+# Tabela de rotas pública
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "public-rt"
+  }
+}
+
+# Associar as subnets à tabela de rotas pública
+resource "aws_route_table_association" "subnet_a_association" {
+  subnet_id      = aws_subnet.subnet_a.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "subnet_b_association" {
+  subnet_id      = aws_subnet.subnet_b.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_db_subnet_group" "default" {
+  name       = "main_subnet_group"
+  subnet_ids = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
+
+  tags = {
+    Name = "main-subnet-group"
+  }
+}
+
+# Security Group para a Lambda
+resource "aws_security_group" "lambda_sg" {
+  vpc_id = aws_vpc.main.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "lambda-sg"
+  }
+}
+
+# Security Group para o RDS
+resource "aws_security_group" "rds_sg" {
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lambda_sg.id] # Apenas a Lambda pode acessar o RDS
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "rds-sg"
+  }
+}
+
+# Instância RDS (MySQL)
+resource "aws_db_instance" "mysql" {
+  identifier             = "transactions-db"
+  engine                 = "mysql"
+  engine_version         = "8.0"
+  instance_class         = "db.t3.micro"
+  allocated_storage      = 20
+  username               = "admin"
+  password               = "supersecretpassword" # Em produção, use Secrets Manager
+  db_name                = "transactions"
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  db_subnet_group_name   = aws_db_subnet_group.default.name
+  skip_final_snapshot    = true
+  publicly_accessible    = true
+
+  # Dependências explícitas para garantir que a rede esteja pronta
+  depends_on = [
+    aws_internet_gateway.igw,
+    aws_route_table.public,
+    aws_route_table_association.subnet_a_association,
+    aws_route_table_association.subnet_b_association,
+    aws_db_subnet_group.default
+  ]
+
+  tags = {
+    Name = "transactions-db"
+  }
+}
+
+# Nova Lambda para processar o stream
+resource "aws_lambda_function" "stream_to_rds" {
+  filename         = "../stream_to_rds.zip"
+  function_name    = "StreamToRDS"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "streamToRDS.handler"
+  runtime          = "nodejs18.x"
+  source_code_hash = filebase64sha256("../stream_to_rds.zip")
+
+  environment {
+    variables = {
+      RDS_HOST     = aws_db_instance.mysql.address
+      RDS_USER     = "admin"
+      RDS_PASSWORD = "supersecretpassword" # Em produção, use Secrets Manager
+      RDS_DATABASE = "transactions"
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
+    security_group_ids = [aws_security_group.lambda_sg.id] # Usar o Security Group da Lambda
+  }
+
+  timeout = 30
+}
+
+# Permissão para o DynamoDB Stream acionar a Lambda
+resource "aws_lambda_event_source_mapping" "stream_mapping" {
+  event_source_arn  = aws_dynamodb_table.transactions_table.stream_arn
+  function_name     = aws_lambda_function.stream_to_rds.arn
+  starting_position = "LATEST"
+}
+
+# Política IAM para permitir que a Lambda acesse a VPC
+resource "aws_iam_role_policy" "lambda_rds_policy" {
+  name = "lambda_rds_policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
