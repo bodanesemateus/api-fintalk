@@ -14,6 +14,7 @@ const validateTransaction = (amount: number, description: string): string | null
 router.post('/transactions', async (req: Request, res: Response) => {
   const { userId, amount, description } = req.body;
   const error = validateTransaction(amount, description);
+
   if (error) {
     return res.status(400).json({ error });
   }
@@ -25,7 +26,7 @@ router.post('/transactions', async (req: Request, res: Response) => {
     description,
     createdAt: new Date().toISOString(),
   };
-  console.log('transaction', transaction);
+  
   try {
     await dynamoDB.send(
       new PutCommand({
@@ -33,8 +34,9 @@ router.post('/transactions', async (req: Request, res: Response) => {
         Item: transaction,
       })
     );
-    console.log('transaction saved');
+    
     res.status(201).json(transaction);
+  
   } catch (error) {
     console.error('Error saving transaction:', error);
     res.status(500).json({ error: 'Failed to save transaction' });

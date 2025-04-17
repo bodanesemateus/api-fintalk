@@ -136,34 +136,59 @@ export AWS_DEFAULT_REGION="sa-east-1"
 
 ### Executando Localmente
 
-#### Usando Docker Compose (Recomendado)
+#### Usando Dev Container (Recomendado)
 
 ```bash
 # Clone o repositório
 git clone <url-do-repositorio>
 cd <diretorio-do-repositorio>
 
-# Construa e inicie os containers
-docker-compose up --build
+code .
 ```
+Isso abrira o vscode no projeto. Com isso, pressione `ctrl + shift + p`, e digite `Reopen in container` 
 
-Isso iniciará a API em http://localhost:3000 e uma instância local do DynamoDB.
-
-#### Configuração Manual
-
-```bash
-# Instale as dependências
-npm install
-
-# Inicie o servidor de desenvolvimento
-npm run dev
-```
+![reopenincontainer](image.png)
 
 ### Testes
 
 ```bash
 # Execute todos os testes
 npm test
+```
+
+### Start
+
+```bash
+# Sobe o projeto na porta 3000
+npm run start
+```
+
+### Testando a API em modo local
+
+```bash
+# Para criar uma nova transacao
+curl -X POST http://localhost:3000/transactions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "user123",
+    "amount": 100.50,
+    "description": "Pagamento de serviço"
+  }'
+```
+
+```bash
+# Para listar as transacoes de um usuario
+curl -X GET "http://localhost:3000/transactions/user123?limit=5"
+```
+
+```bash
+# Para listar as transacoes de um usuario com paginacao
+curl -X GET "http://localhost:3000/transactions/user123?limit=5&lastEvaluatedKey=VALOR_RETORNADO_DA_CONSULTA_ANTERIOR"
+```
+
+```bash
+# Para retornar o saldo de um usuario
+curl -X GET "http://localhost:3000/balance/user123?month=2023-06"
 ```
 
 ## Implantação em Produção
