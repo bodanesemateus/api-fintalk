@@ -47,7 +47,7 @@ POST /api/transactions
 
 **Exemplo de Uso:**
 ```bash
-curl -X POST https://gazoclfxr8.execute-api.sa-east-1.amazonaws.com/prod/api/transactions \
+curl -X POST https://your-api-endpoint.com/prod/api/transactions \
   -H "Content-Type: application/json" \
   -d '{"userId":"123","amount":100,"description":"Pagamento"}'
 ```
@@ -71,7 +71,7 @@ GET /api/transactions/:userId
 
 **Exemplo de Uso:**
 ```bash
-curl https://gazoclfxr8.execute-api.sa-east-1.amazonaws.com/prod/api/transactions/123
+curl https://your-api-endpoint.com/prod/api/transactions/123
 ```
 
 **Resposta:**
@@ -99,7 +99,7 @@ GET /api/balance/:userId?month=YYYY-MM
 
 **Exemplo de Uso:**
 ```bash
-curl https://gazoclfxr8.execute-api.sa-east-1.amazonaws.com/prod/api/balance/123?month=2025-04
+curl https://your-api-endpoint.com/prod/api/balance/123?month=2025-04
 ```
 
 **Resposta:**
@@ -199,27 +199,47 @@ A API está implantada na AWS usando Lambda, API Gateway, DynamoDB e RDS.
 
 A API de produção está disponível em:
 ```
-https://gazoclfxr8.execute-api.sa-east-1.amazonaws.com/prod/api
+https://your-api-endpoint.com/prod/api
 ```
 
 ### Testando a API em Produção
 
 ```bash
 # Registrar uma transação
-curl -X POST https://gazoclfxr8.execute-api.sa-east-1.amazonaws.com/prod/api/transactions \
+curl -X POST https://your-api-endpoint.com/prod/api/transactions \
   -H "Content-Type: application/json" \
   -d '{"userId":"123","amount":100,"description":"Pagamento"}'
 
 # Listar transações de um usuário
-curl -X GET https://gazoclfxr8.execute-api.sa-east-1.amazonaws.com/prod/api/transactions/123
+curl -X GET https://your-api-endpoint.com/prod/api/transactions/123
 
 # Consultar saldo mensal
-curl -X GET https://gazoclfxr8.execute-api.sa-east-1.amazonaws.com/prod/api/balance/123?month=2025-04
+curl -X GET https://your-api-endpoint.com/prod/api/balance/123?month=2025-04
 ```
 
 ## Streaming de DynamoDB para RDS
 
 O sistema replica automaticamente os dados de transações do DynamoDB para um banco de dados MySQL RDS usando DynamoDB Streams e uma função Lambda.
+
+### Arquitetura de Streaming
+
+```
+┌───────────────┐     ┌────────────────┐     ┌───────────────┐     ┌───────────────┐
+│   DynamoDB    │     │    DynamoDB    │     │    Lambda     │     │     Amazon    │
+│  Transactions │────►│     Streams    │────►│  StreamToRDS  │────►│   RDS MySQL   │
+└───────────────┘     └────────────────┘     └───────────────┘     └───────────────┘
+        │                                            │                     ▲
+        │                                            │                     │
+        │                    ┌───────────────────────┘                     │
+        │                    │                                             │
+        └────────────────────┼─────────────────────────────────────────────┘
+                             │
+                      Fluxo de dados:
+                      1. Evento de alteração
+                      2. Captura pelo Stream
+                      3. Processamento
+                      4. Persistência
+```
 
 ### Processo de Streaming
 
